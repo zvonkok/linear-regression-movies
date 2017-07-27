@@ -1,0 +1,134 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  github_document
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+suppressMessages(library(ggplot2))
+suppressMessages(library(dplyr))
+suppressMessages(library(statsr))
+suppressMessages(library(GGally))
+suppressMessages(library(Hmisc))
+library(corrgram)
+```
+
+### Load data
+
+```{r load-data}
+setwd(".")
+load("movies.Rdata")
+```
+
+## Part 1: Data
+
+The data set is comprised of 651 randomly sampled movies produced and released before 2016.
+
+Some of these variables are only there for informational purposes and do not make any sense to include in a statistical analysis. It is up to you to decide which variables are meaningful and which should be omitted. For example information in the the actor1 through actor5 variables was used to determine whether the movie casts an actor or actress who won a best actor or actress Oscar.
+
+Based on the research question one will omit certain observations or restructure some of the variables to make them suitable for answering. Furthermore, when fitting a model one should be careful about collinearity, as some of the
+variables may be dependent on each other.
+
+## Part 2: Research question
+
+Is there a association between the data given about a movie and the ratings it got? The focus
+will be the =imdb_rating=. Based on that, the other ratings will be removed since there are
+likely to be highly correlated with =imdb_rating=. 
+
+
+## Part 3: Exploratory data analysis
+
+First lets select the columns one needs for the study. Remove highly correlated variables.
+```{r}
+cor(movies$imdb_rating, movies$critics_score)
+cor(movies$imdb_rating, movies$audience_score)
+```
+Additionally remove columns that are likely not associated with a rating. 
+```{r}
+mov <- subset(movies, select = 
+                c(imdb_rating, best_pic_nom, 
+                  best_pic_win, best_actor_win, 
+                  best_actress_win, best_dir_win,
+                  genre, runtime, mpaa_rating, 
+                  studio, imdb_num_votes, top200_box, 
+                  director))
+```
+
+``` {r ggpairs0, cache = TRUE, fig.width=10}
+ggpairs(mov, columns = c(1, 2:8))
+```
+Looking at the first 9 columns, there is only one numerical variable namely runtime. The correlation
+between =imdb_rating= and =runtime= is only 0.268 and one can consider these variables as not collinear.
+Collinearity can change the coefficient estimates erratically in response to small changes in the model
+or the data. Lets have a look at the remaining data.
+``` {r ggpairs1, cache = TRUE, fig.width=10}
+ggpairs(mov, columns = c(1, 9, 11, 12))
+```
+=Studio= and =director= are excluded here because they have a lot of levels and the plot would be "huge".
+Again many categorical variables and a second numerical the =imdb_num_votes=, the correlation coefficient
+is 0.331 and one can say that there are not highly collinear.
+
+## Part 4: Modeling
+
+For the model selection the forward selection method will be used. There is a lot of data and
+going backwards would consume too much time. Starting with an empty model one will add
+one predictor at a time until the parsimonious model is reached. A hybrid approach will be used
+depending on p-value and adjusted r squared. Lets start with =imdb_rating= and =runtime=.
+``` {r}
+fit <- lm(imdb_rating ~ runtime, mov)
+summary(fit)
+```
+So only 7% can be explained by runtime lets add group of vars namely all oscar related.
+``` {r}
+fit <- lm(imdb_rating ~ runtime + best_pic_nom + best_pic_win + best_actor_win + best_actress_win + best_dir_win, mov)
+summary(fit)
+```
+Only 2% gained by including the oscar related stuff and the p-values of all of them are pretty high lets remove
+not significant and add other vars. 
+``` {r}
+fit <- lm(imdb_rating ~ runtime + best_pic_nom, mov)
+summary(fit)$adj.r.squared
+```
+Lets add the new variables and see how the model reacts.
+``` {r}
+fit <- lm(imdb_rating ~ runtime + best_pic_nom + genre + mpaa_rating + studio,  mov)
+summary(fit)$adj.r.squared
+```
+As can be noticed from the summary there are factor in genrec mpaa_rating and studio that
+are significant and increase the adjusted r squared. Single factors from a category cannot
+be deleted so one will leave every factor in the model. Now add more of the vars. 
+``` {r}
+fit <- lm(imdb_rating ~ runtime + best_pic_nom + genre + mpaa_rating + studio + imdb_num_votes, mov)
+summary(fit)$adj.r.squared
+```
+Based on the adjusted r squared the top200_box is removed and director is removed because alot of NA's. Now the adjusted r-squared is at 0.4463. Experiments with the =actor= variables showed no significant improvement
+so the final model is the following.
+``` {r}
+fit <- lm(imdb_rating ~ runtime + best_pic_nom + genre + mpaa_rating + studio + imdb_num_votes , mov)
+summary(fit)$adj.r.squared
+```
+The adjusted r squared for this model is 0.4463 which means 44.6% of the variability of imdb_ratings can be explained by this model.
+
+## Part 5: Prediction
+
+For prediction we use "Mad Max: Fury Road" that has a 8.1 =imdb_rating=. 
+```{r}
+madmax <- data.frame(runtime=120, best_pic_nom="yes", genre="Action & Adventure", mpaa_rating="R", studio="Warner Bros. Pictures", imdb_num_votes=577247)
+
+predict(fit, madmax)
+```
+The predicted values is 7.99 which is pretty close to 8.1 as reported by the IMDb website. 
+
+
+## Part 6: Conclusion
+
+Only one movie was predicted, to really see if a model is "good" one needs to predict far more movies
+than one. If it still show good results with much a higher prediction set than one can conclude that 
+the model is reasonable. If the performance degrades, either more or other variables have to be included
+into the model. Either way it is always a balance act of return on investment. 
+
+
